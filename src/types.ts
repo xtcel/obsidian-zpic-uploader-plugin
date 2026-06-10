@@ -1,5 +1,5 @@
 /**
- * Type definitions for the Zpic-Uploader Obsidian plugin.
+ * Type definitions for the Zpic Uploader Obsidian plugin.
  */
 
 /**

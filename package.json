@@ -1,7 +1,7 @@
 {
   "name": "obsidian-zpic-uploader-plugin",
   "version": "0.1.2",
-  "description": "Zpic-Uploader plugin for Obsidian (paste and drag-and-drop).",
+  "description": "Zpic Uploader plugin for Obsidian (paste and drag-and-drop).",
   "main": "main.js",
   "scripts": {
     "dev": "rollup -c -w",

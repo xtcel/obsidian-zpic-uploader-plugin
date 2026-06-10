@@ -1,4 +1,4 @@
-# Zpic-Uploader — Obsidian plugin
+# Zpic Uploader — Obsidian plugin
 
 > Paste or drop an image into your note and let [zpic][zpic] upload it to
 > the host of your choice (GitHub, S3, OSS, local, ...).
@@ -39,7 +39,7 @@ The plugin only speaks the PicGo-compatible HTTP contract documented in
    <YourVault>/.obsidian/plugins/zpic-uploader/
    ```
 4. Restart Obsidian, then enable the plugin under
-   **Settings → Community plugins → Zpic-Uploader**.
+   **Settings → Community plugins → Zpic Uploader**.
 
 ### Manual / development install
 

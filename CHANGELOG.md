@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the **zpic Image Upload** Obsidian plugin are
+All notable changes to the **Zpic-Uploader** Obsidian plugin are
 documented here. The format follows [Keep a Changelog][keep-a-changelog]
 and the project adheres to [Semantic Versioning][semver].
 
@@ -25,6 +25,17 @@ and the project adheres to [Semantic Versioning][semver].
   binary, so every byte survives the round-trip. JSON path-list uploads
   (desktop, file-on-disk) were not affected and continue to work
   unchanged.
+
+### Changed
+
+- **Renamed the plugin to Zpic-Uploader.** The plugin identifier
+  (manifest `id`) changed from `zpic-image-upload` to `zpic-uploader`,
+  and the display name from `Zpic Image Upload` to `Zpic-Uploader`.
+  This is a one-time rename so the plugin is recognisably the official
+  uploader client for the zpic ecosystem. **Existing installs must be
+  re-added from BRAT**, which will create a new plugin folder named
+  `zpic-uploader`; the old `zpic-image-upload` folder can be removed
+  manually.
 
 ## [0.1.1] — 2026-06-09
 

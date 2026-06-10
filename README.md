@@ -1,4 +1,4 @@
-# zpic Image Upload — Obsidian plugin
+# Zpic-Uploader — Obsidian plugin
 
 > Paste or drop an image into your note and let [zpic][zpic] upload it to
 > the host of your choice (GitHub, S3, OSS, local, ...).
@@ -30,16 +30,16 @@ The plugin only speaks the PicGo-compatible HTTP contract documented in
 
 ### From a GitHub release (recommended)
 
-1. Download the latest `zpic-image-upload-X.Y.Z.zip` from
-   [GitHub Releases](https://github.com/xtcel/zpic/releases).
+1. Download the latest `zpic-uploader-X.Y.Z.zip` from
+   [GitHub Releases](https://github.com/xtcel/obsidian-zpic-uploader-plugin/releases).
 2. Extract the zip — it contains `main.js`, `manifest.json`, and
    `styles.css`.
 3. Copy those files to:
    ```
-   <YourVault>/.obsidian/plugins/zpic/
+   <YourVault>/.obsidian/plugins/zpic-uploader/
    ```
 4. Restart Obsidian, then enable the plugin under
-   **Settings → Community plugins → Zpic Image Upload**.
+   **Settings → Community plugins → Zpic-Uploader**.
 
 ### Manual / development install
 
@@ -49,7 +49,7 @@ cd zpic/extensions/obsidian
 npm install
 npm run build
 # Then symlink the directory into your vault:
-ln -s "$(pwd)" "<YourVault>/.obsidian/plugins/zpic"
+ln -s "$(pwd)" "<YourVault>/.obsidian/plugins/zpic-uploader"
 ```
 
 Enable the plugin in Obsidian (you may need to toggle "Community
@@ -57,7 +57,7 @@ plugins → Restricted mode" off the first time).
 
 ## Configuration
 
-Open **Settings → Community plugins → Zpic Image Upload** to configure:
+Open **Settings → Community plugins → Zpic-Uploader** to configure:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -204,9 +204,9 @@ your phone is on the same network.
 1. Bump `version` in `package.json` and `manifest.json` (keep them in
    sync).
 2. Run `npm run build` and verify `main.js` is regenerated.
-3. Tag the release: `git tag obsidian-v0.1.0`.
+3. Tag the release: `git tag v0.1.0`.
 4. Create a GitHub release attaching `main.js`, `manifest.json`, and
-   `styles.css` zipped as `zpic-image-upload-<version>.zip`.
+   `styles.css` zipped as `zpic-uploader-<version>.zip`.
 
 ## License
 

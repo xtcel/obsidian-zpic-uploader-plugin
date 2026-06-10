@@ -1,5 +1,5 @@
 /**
- * Settings tab for the zpic plugin.
+ * Settings tab for the Zpic-Uploader plugin.
  *
  * The plugin settings and the `ZpicSettingTab` class live in their own
  * module so that `main.ts` stays focused on event handling. The tab
@@ -29,7 +29,7 @@ export class ZpicSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Zpic image upload' });
+    containerEl.createEl('h2', { text: 'Zpic-Uploader' });
 
     containerEl.createEl('p', {
       text:

@@ -1,5 +1,5 @@
 /**
- * zpic Image Upload — Obsidian plugin entry point.
+ * Zpic-Uploader — Obsidian plugin entry point.
  *
  * Listens for editor paste and drop events, sends any image files to the
  * running zpic server, and replaces a temporary `![Uploading…]()` row in

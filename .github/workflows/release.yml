@@ -1,0 +1,61 @@
+name: Release Assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to upload assets to (for example: v0.1.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build plugin
+        run: pnpm build
+
+      - name: Verify BRAT-required files
+        run: |
+          test -f main.js
+          test -f manifest.json
+          test -f styles.css
+
+      - name: Create release zip
+        run: zip -j "zpic-uploader-${TAG_NAME}.zip" main.js manifest.json styles.css
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            main.js
+            manifest.json
+            styles.css
+            zpic-uploader-${{ env.TAG_NAME }}.zip
+          fail_on_unmatched_files: true

@@ -1,0 +1,32 @@
+{
+  "name": "obsidian-zpic-plugin",
+  "version": "0.1.2",
+  "description": "zpic image upload plugin for Obsidian (paste and drag-and-drop).",
+  "main": "main.js",
+  "scripts": {
+    "dev": "rollup -c -w",
+    "build": "rollup -c --environment NODE_ENV:production",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "image",
+    "upload",
+    "zpic",
+    "picgo"
+  ],
+  "author": "Zpic Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-typescript": "^11.0.0",
+    "@types/node": "^20.0.0",
+    "obsidian": "^1.4.0",
+    "rollup": "^4.0.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.0.0"
+  }
+}

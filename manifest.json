@@ -1,0 +1,11 @@
+{
+  "id": "zpic-image-upload",
+  "name": "Zpic Image Upload",
+  "version": "0.1.2",
+  "minAppVersion": "0.15.0",
+  "description": "Automatically upload images to the zpic server on paste and drag-and-drop.",
+  "author": "Zpic Team",
+  "authorUrl": "https://github.com/xtcel/zpic",
+  "fundingUrl": "https://github.com/sponsors/xtcel",
+  "isDesktopOnly": false
+}

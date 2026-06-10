@@ -1,0 +1,32 @@
+/* zpic Image Upload — Obsidian plugin styles. */
+
+/* Status line rendered inside the settings tab. */
+.zpic-status {
+  margin: 0.5em 0 1em;
+  padding: 0.5em 0.75em;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.zpic-status.is-ok {
+  color: var(--text-success, #2e7d32);
+  background: var(--background-secondary);
+}
+
+.zpic-status.is-error {
+  color: var(--text-error, #b00020);
+  background: var(--background-secondary);
+}
+
+/* Subtle visual hint for in-flight placeholder rows. The leading
+   ellipsis character already conveys "loading", so we keep this
+   minimal to avoid clashing with theme accents. */
+.zpic-placeholder {
+  opacity: 0.6;
+  font-style: italic;
+}

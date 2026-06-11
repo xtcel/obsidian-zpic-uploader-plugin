@@ -26,11 +26,12 @@ import {
   type ZpicSettings,
 } from "./types";
 import {
-  formatImageMarkdown,
+  formatUploadedMarkdown,
   generatePlaceholderId,
   getPlaceholderText,
   guessMimeType,
   isImageFile,
+  isUploadableFile,
 } from "./utils";
 
 const COMMAND_UPLOAD_FROM_CLIPBOARD = "upload-image-from-clipboard";
@@ -137,15 +138,15 @@ export default class ZpicPlugin extends Plugin {
     const files = evt.clipboardData?.files;
     if (!files || files.length === 0) return;
 
-    const imageFiles = Array.from(files).filter(isImageFile);
-    if (imageFiles.length === 0) return;
+    const uploadableFiles = Array.from(files).filter(isUploadableFile);
+    if (uploadableFiles.length === 0) return;
 
     // Only intercept the paste once we are sure there is an image to
     // upload, so pasting plain text still works.
     evt.preventDefault();
     evt.stopPropagation();
 
-    await this.uploadAndInsert(editor, imageFiles);
+    await this.uploadAndInsert(editor, uploadableFiles);
   }
 
   private async handleDrop(
@@ -162,13 +163,13 @@ export default class ZpicPlugin extends Plugin {
     const files = evt.dataTransfer?.files;
     if (!files || files.length === 0) return;
 
-    const imageFiles = Array.from(files).filter(isImageFile);
-    if (imageFiles.length === 0) return;
+    const uploadableFiles = Array.from(files).filter(isUploadableFile);
+    if (uploadableFiles.length === 0) return;
 
     evt.preventDefault();
     evt.stopPropagation();
 
-    await this.uploadAndInsert(editor, imageFiles);
+    await this.uploadAndInsert(editor, uploadableFiles);
   }
 
   // ------------------------------------------------------------------
@@ -200,6 +201,7 @@ export default class ZpicPlugin extends Plugin {
     const placeholders = files.map((file) => ({
       id: generatePlaceholderId(),
       name: file.name,
+      file,
     }));
 
     const placeholderText = placeholders
@@ -226,7 +228,7 @@ export default class ZpicPlugin extends Plugin {
           this.replacePlaceholder(editor, placeholder.id, "⚠️ Missing URL");
           return;
         }
-        const markdown = formatImageMarkdown(
+        const markdown = formatUploadedMarkdown(
           url,
           placeholder.name,
           this.settings.imageDesc,
@@ -236,7 +238,7 @@ export default class ZpicPlugin extends Plugin {
 
       const okCount = placeholders.filter((_, i) => urls[i]).length;
       if (okCount > 0) {
-        showNotice(`Uploaded ${okCount} of ${placeholders.length} image(s)`);
+        showNotice(`Uploaded ${okCount} of ${placeholders.length} file(s)`);
       }
 
       // The `deleteLocalAfterUpload` setting is a no-op for now: we

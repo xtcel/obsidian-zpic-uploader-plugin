@@ -105,7 +105,7 @@ export class ZpicSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Upload on drop')
       .setDesc(
-        'Automatically upload image files dragged into the editor. ' +
+        'Automatically upload image/audio/video files dragged into the editor. ' +
           'Hold Ctrl/Cmd while dropping to keep Obsidian\'s default behaviour.'
       )
       .addToggle((toggle) =>

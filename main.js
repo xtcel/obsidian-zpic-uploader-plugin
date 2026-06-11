@@ -16,11 +16,11 @@ const IMAGE_EXTENSIONS = [
     '.gif',
     '.webp',
     '.bmp',
-    '.tiff',
-    '.tif',
     '.svg',
     '.avif',
 ];
+const AUDIO_EXTENSIONS = ['.flac', '.m4a', '.mp3', '.ogg', '.wav', '.webm', '.3gp'];
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogv'];
 /**
  * Check whether a file (browser `File` or Obsidian `TFile`) is an image
  * by looking at its extension. The MIME type on `File` objects is not
@@ -31,6 +31,21 @@ function isImageFile(file) {
         return false;
     const fileName = file.name.toLowerCase();
     return IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+function isVideoFile(file) {
+    if (!file || !file.name)
+        return false;
+    const fileName = file.name.toLowerCase();
+    return VIDEO_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+function isAudioFile(file) {
+    if (!file || !file.name)
+        return false;
+    const fileName = file.name.toLowerCase();
+    return AUDIO_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+function isUploadableFile(file) {
+    return isImageFile(file) || isVideoFile(file) || isAudioFile(file);
 }
 /**
  * Generate a short, unique placeholder id used inside the inserted
@@ -47,6 +62,30 @@ function generatePlaceholderId() {
 function formatImageMarkdown(url, name, desc) {
     const altText = desc === 'origin' ? name : '';
     return `![${altText}](${url})`;
+}
+function escapeHtmlAttribute(value) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+function formatUploadedMarkdown(url, fileName, imageDesc) {
+    const lower = fileName.toLowerCase();
+    if (IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+        return formatImageMarkdown(url, fileName, imageDesc);
+    }
+    if (AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+        const safeUrl = escapeHtmlAttribute(url);
+        const safeTitle = escapeHtmlAttribute(fileName);
+        return `<audio src="${safeUrl}" controls title="${safeTitle}"></audio>`;
+    }
+    if (VIDEO_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+        const safeUrl = escapeHtmlAttribute(url);
+        const safeTitle = escapeHtmlAttribute(fileName);
+        return `<video src="${safeUrl}" controls title="${safeTitle}"></video>`;
+    }
+    return `[${fileName}](${url})`;
 }
 /**
  * Build the placeholder markdown inserted while an upload is in flight.
@@ -84,9 +123,23 @@ function guessMimeType(fileName) {
             return 'image/svg+xml';
         case 'avif':
             return 'image/avif';
-        case 'tif':
-        case 'tiff':
-            return 'image/tiff';
+        case 'flac':
+            return 'audio/flac';
+        case 'm4a':
+            return 'audio/mp4';
+        case 'mp3':
+            return 'audio/mpeg';
+        case 'ogg':
+            return 'audio/ogg';
+        case 'wav':
+            return 'audio/wav';
+        case '3gp':
+            return 'audio/3gpp';
+        case 'mp4':
+            return 'video/mp4';
+        case 'webm':
+        case 'ogv':
+            return 'video/ogg';
         default:
             return 'application/octet-stream';
     }
@@ -335,7 +388,7 @@ async function buildMultipartBody(files) {
 }
 
 /**
- * Type definitions for the Zpic-Uploader Obsidian plugin.
+ * Type definitions for the Zpic Uploader Obsidian plugin.
  */
 /**
  * Frontmatter keys that allow disabling per-note uploads.
@@ -352,7 +405,7 @@ const DEFAULT_SETTINGS = {
 };
 
 /**
- * Settings tab for the Zpic-Uploader plugin.
+ * Settings tab for the Zpic Uploader plugin.
  *
  * The plugin settings and the `ZpicSettingTab` class live in their own
  * module so that `main.ts` stays focused on event handling. The tab
@@ -370,7 +423,7 @@ class ZpicSettingTab extends obsidian.PluginSettingTab {
     display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Zpic-Uploader' });
+        containerEl.createEl('h2', { text: 'Zpic Uploader' });
         containerEl.createEl('p', {
             text: 'zpic uploads images to your configured host (GitHub, S3, OSS, ' +
                 'local, ...) and inserts the resulting URL into the current note. ' +
@@ -434,7 +487,7 @@ class ZpicSettingTab extends obsidian.PluginSettingTab {
         }));
         new obsidian.Setting(containerEl)
             .setName('Upload on drop')
-            .setDesc('Automatically upload image files dragged into the editor. ' +
+            .setDesc('Automatically upload image/audio/video files dragged into the editor. ' +
             'Hold Ctrl/Cmd while dropping to keep Obsidian\'s default behaviour.')
             .addToggle((toggle) => toggle
             .setValue(this.plugin.settings.uploadOnDrop)
@@ -514,7 +567,7 @@ function normalizeSettings(raw) {
 }
 
 /**
- * Zpic-Uploader — Obsidian plugin entry point.
+ * Zpic Uploader — Obsidian plugin entry point.
  *
  * Listens for editor paste and drop events, sends any image files to the
  * running zpic server, and replaces a temporary `![Uploading…]()` row in
@@ -596,14 +649,14 @@ class ZpicPlugin extends obsidian.Plugin {
         const files = evt.clipboardData?.files;
         if (!files || files.length === 0)
             return;
-        const imageFiles = Array.from(files).filter(isImageFile);
-        if (imageFiles.length === 0)
+        const uploadableFiles = Array.from(files).filter(isUploadableFile);
+        if (uploadableFiles.length === 0)
             return;
         // Only intercept the paste once we are sure there is an image to
         // upload, so pasting plain text still works.
         evt.preventDefault();
         evt.stopPropagation();
-        await this.uploadAndInsert(editor, imageFiles);
+        await this.uploadAndInsert(editor, uploadableFiles);
     }
     async handleDrop(evt, editor, _view) {
         if (!this.settings.uploadOnDrop)
@@ -617,12 +670,12 @@ class ZpicPlugin extends obsidian.Plugin {
         const files = evt.dataTransfer?.files;
         if (!files || files.length === 0)
             return;
-        const imageFiles = Array.from(files).filter(isImageFile);
-        if (imageFiles.length === 0)
+        const uploadableFiles = Array.from(files).filter(isUploadableFile);
+        if (uploadableFiles.length === 0)
             return;
         evt.preventDefault();
         evt.stopPropagation();
-        await this.uploadAndInsert(editor, imageFiles);
+        await this.uploadAndInsert(editor, uploadableFiles);
     }
     // ------------------------------------------------------------------
     // Core upload pipeline
@@ -645,6 +698,7 @@ class ZpicPlugin extends obsidian.Plugin {
         const placeholders = files.map((file) => ({
             id: generatePlaceholderId(),
             name: file.name,
+            file,
         }));
         const placeholderText = placeholders
             .map((p) => getPlaceholderText(p.id))
@@ -667,12 +721,12 @@ class ZpicPlugin extends obsidian.Plugin {
                     this.replacePlaceholder(editor, placeholder.id, "⚠️ Missing URL");
                     return;
                 }
-                const markdown = formatImageMarkdown(url, placeholder.name, this.settings.imageDesc);
+                const markdown = formatUploadedMarkdown(url, placeholder.name, this.settings.imageDesc);
                 this.replacePlaceholder(editor, placeholder.id, markdown);
             });
             const okCount = placeholders.filter((_, i) => urls[i]).length;
             if (okCount > 0) {
-                showNotice(`Uploaded ${okCount} of ${placeholders.length} image(s)`);
+                showNotice(`Uploaded ${okCount} of ${placeholders.length} file(s)`);
             }
             // The `deleteLocalAfterUpload` setting is a no-op for now: we
             // can't reliably tell a clipboard blob from a dragged file on

@@ -16,11 +16,13 @@ const IMAGE_EXTENSIONS = [
   '.gif',
   '.webp',
   '.bmp',
-  '.tiff',
-  '.tif',
   '.svg',
   '.avif',
 ];
+
+const AUDIO_EXTENSIONS = ['.flac', '.m4a', '.mp3', '.ogg', '.wav', '.webm', '.3gp'];
+
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogv'];
 
 /**
  * Check whether a file (browser `File` or Obsidian `TFile`) is an image
@@ -31,6 +33,22 @@ export function isImageFile(file: File | TFile): boolean {
   if (!file || !file.name) return false;
   const fileName = file.name.toLowerCase();
   return IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+
+export function isVideoFile(file: File | TFile): boolean {
+  if (!file || !file.name) return false;
+  const fileName = file.name.toLowerCase();
+  return VIDEO_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+
+export function isAudioFile(file: File | TFile): boolean {
+  if (!file || !file.name) return false;
+  const fileName = file.name.toLowerCase();
+  return AUDIO_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+}
+
+export function isUploadableFile(file: File | TFile): boolean {
+  return isImageFile(file) || isVideoFile(file) || isAudioFile(file);
 }
 
 /**
@@ -53,6 +71,36 @@ export function formatImageMarkdown(
 ): string {
   const altText = desc === 'origin' ? name : '';
   return `![${altText}](${url})`;
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function formatUploadedMarkdown(
+  url: string,
+  fileName: string,
+  imageDesc: ImageDescMode,
+): string {
+  const lower = fileName.toLowerCase();
+  if (IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+    return formatImageMarkdown(url, fileName, imageDesc);
+  }
+  if (AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+    const safeUrl = escapeHtmlAttribute(url);
+    const safeTitle = escapeHtmlAttribute(fileName);
+    return `<audio src="${safeUrl}" controls title="${safeTitle}"></audio>`;
+  }
+  if (VIDEO_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+    const safeUrl = escapeHtmlAttribute(url);
+    const safeTitle = escapeHtmlAttribute(fileName);
+    return `<video src="${safeUrl}" controls title="${safeTitle}"></video>`;
+  }
+  return `[${fileName}](${url})`;
 }
 
 /**
@@ -93,9 +141,23 @@ export function guessMimeType(fileName: string): string {
       return 'image/svg+xml';
     case 'avif':
       return 'image/avif';
-    case 'tif':
-    case 'tiff':
-      return 'image/tiff';
+    case 'flac':
+      return 'audio/flac';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'wav':
+      return 'audio/wav';
+    case '3gp':
+      return 'audio/3gpp';
+    case 'mp4':
+      return 'video/mp4';
+    case 'webm':
+    case 'ogv':
+      return 'video/ogg';
     default:
       return 'application/octet-stream';
   }

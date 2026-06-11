@@ -266,6 +266,14 @@ class ZpicUploader {
     /** Parse the server response and surface structured errors. */
     handleResponse(response) {
         if (response.status < 200 || response.status >= 300) {
+            if (response.status === 413) {
+                return {
+                    success: false,
+                    msg: "Server returned HTTP 413 (payload too large). " +
+                        "This file is larger than the server upload limit.",
+                    code: "SERVER_ERROR",
+                };
+            }
             return {
                 success: false,
                 msg: `Server returned HTTP ${response.status}`,
@@ -705,7 +713,11 @@ class ZpicPlugin extends obsidian.Plugin {
             .join("\n");
         editor.replaceSelection(`${placeholderText}\n`);
         try {
-            const response = await this.uploader.upload(files);
+            // On desktop Electron, dropped files usually expose a native file
+            // path (`file.path`). Prefer path-list mode when available so large
+            // media uploads don't hit multipart body-size limits.
+            const nativePaths = this.getNativeFilePaths(files);
+            const response = await this.uploader.upload(nativePaths ?? files);
             if (!response.success) {
                 this.replacePlaceholders(editor, placeholders, {
                     success: false,
@@ -746,6 +758,27 @@ class ZpicPlugin extends obsidian.Plugin {
             showNotice(`Upload error: ${message}`);
             return null;
         }
+    }
+    /**
+     * Extract native file-system paths from browser `File` objects when
+     * running in desktop Electron. Returns `null` unless every file has
+     * a usable absolute path.
+     */
+    getNativeFilePaths(files) {
+        if (files.length === 0)
+            return null;
+        const paths = [];
+        for (const file of files) {
+            const nativePath = file.path;
+            if (typeof nativePath !== "string" || nativePath.length === 0) {
+                return null;
+            }
+            if (!nativePath.startsWith("/") && !/^[a-zA-Z]:[\\/]/.test(nativePath)) {
+                return null;
+            }
+            paths.push(nativePath);
+        }
+        return paths;
     }
     /**
      * Locate the first occurrence of a placeholder in the editor and

@@ -155,6 +155,15 @@ export class ZpicUploader {
   /** Parse the server response and surface structured errors. */
   private handleResponse(response: MinimalRequestResponse): UploadResponse {
     if (response.status < 200 || response.status >= 300) {
+      if (response.status === 413) {
+        return {
+          success: false,
+          msg:
+            "Server returned HTTP 413 (payload too large). " +
+            "This file is larger than the server upload limit.",
+          code: "SERVER_ERROR",
+        };
+      }
       return {
         success: false,
         msg: `Server returned HTTP ${response.status}`,

@@ -210,7 +210,11 @@ export default class ZpicPlugin extends Plugin {
     editor.replaceSelection(`${placeholderText}\n`);
 
     try {
-      const response = await this.uploader.upload(files);
+      // On desktop Electron, dropped files usually expose a native file
+      // path (`file.path`). Prefer path-list mode when available so large
+      // media uploads don't hit multipart body-size limits.
+      const nativePaths = this.getNativeFilePaths(files);
+      const response = await this.uploader.upload(nativePaths ?? files);
 
       if (!response.success) {
         this.replacePlaceholders(editor, placeholders, {
@@ -259,6 +263,29 @@ export default class ZpicPlugin extends Plugin {
       showNotice(`Upload error: ${message}`);
       return null;
     }
+  }
+
+  /**
+   * Extract native file-system paths from browser `File` objects when
+   * running in desktop Electron. Returns `null` unless every file has
+   * a usable absolute path.
+   */
+  private getNativeFilePaths(files: File[]): string[] | null {
+    if (files.length === 0) return null;
+
+    const paths: string[] = [];
+    for (const file of files) {
+      const nativePath = (file as File & { path?: unknown }).path;
+      if (typeof nativePath !== "string" || nativePath.length === 0) {
+        return null;
+      }
+      if (!nativePath.startsWith("/") && !/^[a-zA-Z]:[\\/]/.test(nativePath)) {
+        return null;
+      }
+      paths.push(nativePath);
+    }
+
+    return paths;
   }
 
   /**

@@ -12,6 +12,7 @@
 
 import {
   Editor,
+  type MarkdownFileInfo,
   MarkdownView,
   Plugin,
   TFile,
@@ -30,9 +31,25 @@ import {
   generatePlaceholderId,
   getPlaceholderText,
   guessMimeType,
-  isImageFile,
   isUploadableFile,
 } from "./utils";
+
+interface EditorSnapshot {
+  filePath: string | null;
+  content: string;
+}
+
+interface InsertedTextChange {
+  start: number;
+  insertedText: string;
+}
+
+interface InsertedMediaReference {
+  start: number;
+  end: number;
+  originalText: string;
+  file: TFile;
+}
 
 const COMMAND_UPLOAD_FROM_CLIPBOARD = "upload-image-from-clipboard";
 const COMMAND_UPLOAD_FROM_VAULT = "upload-image-from-vault";
@@ -40,6 +57,8 @@ const COMMAND_UPLOAD_FROM_VAULT = "upload-image-from-vault";
 export default class ZpicPlugin extends Plugin {
   settings!: ZpicSettings;
   uploader!: ZpicUploader;
+  private editorSnapshots = new WeakMap<Editor, EditorSnapshot>();
+  private suppressedEditorChanges = new WeakMap<Editor, number>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -63,6 +82,15 @@ export default class ZpicPlugin extends Plugin {
         "editor-drop",
         (evt: DragEvent, editor: Editor, view: MarkdownView) => {
           void this.handleDrop(evt, editor, view);
+        },
+      ),
+    );
+
+    this.registerEvent(
+      this.app.workspace.on(
+        "editor-change",
+        (editor: Editor, info: MarkdownView | MarkdownFileInfo) => {
+          void this.handleEditorChange(editor, info);
         },
       ),
     );
@@ -172,6 +200,40 @@ export default class ZpicPlugin extends Plugin {
     await this.uploadAndInsert(editor, uploadableFiles);
   }
 
+  private async handleEditorChange(
+    editor: Editor,
+    info: MarkdownView | MarkdownFileInfo,
+  ): Promise<void> {
+    const filePath = info.file?.path ?? null;
+    const content = editor.getValue();
+    const previous = this.editorSnapshots.get(editor);
+
+    if (this.isEditorChangeSuppressed(editor)) {
+      this.editorSnapshots.set(editor, { filePath, content });
+      return;
+    }
+
+    this.editorSnapshots.set(editor, { filePath, content });
+
+    if (!previous || previous.filePath !== filePath || !filePath) return;
+    if (this.isUploadDisabledInFrontmatter(info.file ?? null)) return;
+
+    const change = this.getInsertedTextChange(previous.content, content);
+    if (!change || !/(\[\[|\]\()/.test(change.insertedText)) return;
+
+    const references = this.findInsertedMediaReferences(
+      change.insertedText,
+      filePath,
+    );
+    if (references.length === 0) return;
+
+    await this.uploadInsertedMediaReferences(
+      editor,
+      change.start,
+      references,
+    );
+  }
+
   // ------------------------------------------------------------------
   // Core upload pipeline
   // ------------------------------------------------------------------
@@ -207,7 +269,9 @@ export default class ZpicPlugin extends Plugin {
     const placeholderText = placeholders
       .map((p) => getPlaceholderText(p.id))
       .join("\n");
-    editor.replaceSelection(`${placeholderText}\n`);
+    this.runEditorMutation(editor, () => {
+      editor.replaceSelection(`${placeholderText}\n`);
+    });
 
     try {
       // On desktop Electron, dropped files usually expose a native file
@@ -305,7 +369,9 @@ export default class ZpicPlugin extends Plugin {
 
     const pos = editor.offsetToPos(idx);
     const end = editor.offsetToPos(idx + target.length);
-    editor.replaceRange(replacement, pos, end);
+    this.runEditorMutation(editor, () => {
+      editor.replaceRange(replacement, pos, end);
+    });
   }
 
   /** Bulk-replace placeholders with a single error row. */
@@ -369,6 +435,99 @@ export default class ZpicPlugin extends Plugin {
     await this.uploadAndInsert(target, files);
   }
 
+  private async uploadInsertedMediaReferences(
+    editor: Editor,
+    baseOffset: number,
+    references: InsertedMediaReference[],
+  ): Promise<void> {
+    const placeholders = references.map((reference) => ({
+      ...reference,
+      id: generatePlaceholderId(),
+    }));
+
+    this.runEditorMutation(editor, () => {
+      for (const placeholder of [...placeholders].reverse()) {
+        const start = editor.offsetToPos(baseOffset + placeholder.start);
+        const end = editor.offsetToPos(baseOffset + placeholder.end);
+        editor.replaceRange(getPlaceholderText(placeholder.id), start, end);
+      }
+    });
+
+    const healthy = await this.uploader.checkHealth();
+    if (!healthy) {
+      this.restoreAttachmentReferences(editor, placeholders);
+      showNotice(
+        "Cannot connect to zpic server. Kept local media attachment links.",
+        6000,
+      );
+      return;
+    }
+
+    let files: File[];
+    try {
+      files = await Promise.all(
+        placeholders.map((placeholder) =>
+          this.readVaultFileForUpload(placeholder.file),
+        ),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.restoreAttachmentReferences(editor, placeholders);
+      showNotice(`Cannot read local attachment: ${message}`);
+      return;
+    }
+
+    try {
+      const response = await this.uploader.upload(files);
+
+      if (!response.success) {
+        this.restoreAttachmentReferences(editor, placeholders);
+        showNotice(`Upload failed: ${response.msg ?? "unknown error"}`);
+        return;
+      }
+
+      const urls = response.result ?? [];
+      let okCount = 0;
+      placeholders.forEach((placeholder, index) => {
+        const url = urls[index];
+        if (!url) {
+          this.replacePlaceholder(editor, placeholder.id, placeholder.originalText);
+          return;
+        }
+
+        okCount += 1;
+        this.replacePlaceholder(
+          editor,
+          placeholder.id,
+          formatUploadedMarkdown(
+            url,
+            placeholder.file.name,
+            this.settings.imageDesc,
+          ),
+        );
+      });
+
+      if (okCount === 0) {
+        showNotice("Upload failed: zpic did not return any URL");
+        return;
+      }
+
+      if (okCount < placeholders.length) {
+        showNotice(
+          `Uploaded ${okCount} of ${placeholders.length} attachment(s); kept local links for the rest.`,
+        );
+        return;
+      }
+
+      showNotice(`Uploaded ${okCount} attachment(s)`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[zpic] attachment upload error:", message);
+      this.restoreAttachmentReferences(editor, placeholders);
+      showNotice(`Upload error: ${message}`);
+    }
+  }
+
   /**
    * Resolve the image attachment referenced by the current selection
    * (if any) into a vault `TFile`. Synchronous and side-effect-free, so
@@ -385,7 +544,7 @@ export default class ZpicPlugin extends Plugin {
 
     const resolved = this.app.vault.getAbstractFileByPath(path);
     if (!(resolved instanceof TFile)) return null;
-    if (!isImageFile(resolved)) return null;
+    if (!isUploadableFile(resolved)) return null;
     return resolved;
   }
 
@@ -398,15 +557,19 @@ export default class ZpicPlugin extends Plugin {
     file: TFile,
   ): Promise<void> {
     try {
-      const bytes = await this.app.vault.readBinary(file);
-      const blob = new File([bytes], file.name, {
-        type: guessMimeType(file.name),
-      });
+      const blob = await this.readVaultFileForUpload(file);
       await this.uploadAndInsert(editor, [blob]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       showNotice(`Cannot read vault image: ${message}`);
     }
+  }
+
+  private async readVaultFileForUpload(file: TFile): Promise<File> {
+    const bytes = await this.app.vault.readBinary(file);
+    return new File([bytes], file.name, {
+      type: guessMimeType(file.name),
+    });
   }
 
   /**
@@ -429,9 +592,159 @@ export default class ZpicPlugin extends Plugin {
     return cleanPath;
   }
 
+  private findInsertedMediaReferences(
+    insertedText: string,
+    sourcePath: string,
+  ): InsertedMediaReference[] {
+    const references: InsertedMediaReference[] = [];
+    const wikiLinkPattern = /!?\[\[([^[\]]+)\]\]/g;
+    const markdownLinkPattern = /!?\[[^\]]*]\(([^)]+)\)/g;
+
+    for (const match of insertedText.matchAll(wikiLinkPattern)) {
+      if (typeof match.index !== "number") continue;
+      const originalText = match[0];
+      const file = this.resolveMediaReference(match[1], sourcePath);
+      if (!file) continue;
+      references.push({
+        start: match.index,
+        end: match.index + originalText.length,
+        originalText,
+        file,
+      });
+    }
+
+    for (const match of insertedText.matchAll(markdownLinkPattern)) {
+      if (typeof match.index !== "number") continue;
+      const originalText = match[0];
+      const file = this.resolveMediaReference(
+        this.extractMarkdownLinkTarget(match[1]),
+        sourcePath,
+      );
+      if (!file) continue;
+      references.push({
+        start: match.index,
+        end: match.index + originalText.length,
+        originalText,
+        file,
+      });
+    }
+
+    return references.sort((left, right) => left.start - right.start);
+  }
+
+  private resolveMediaReference(
+    rawTarget: string,
+    sourcePath: string,
+  ): TFile | null {
+    const normalizedTarget = rawTarget
+      .trim()
+      .replace(/^<|>$/g, "")
+      .split("|")[0]
+      .split("#")[0]
+      .trim();
+
+    if (!normalizedTarget) return null;
+    if (/^(?:[a-z]+:)?\/\//i.test(normalizedTarget)) return null;
+    if (/^(?:data|mailto):/i.test(normalizedTarget)) return null;
+
+    const linkPath = normalizedTarget.startsWith("/")
+      ? normalizedTarget.slice(1)
+      : normalizedTarget;
+
+    const resolved =
+      this.app.metadataCache.getFirstLinkpathDest(linkPath, sourcePath) ??
+      this.app.vault.getAbstractFileByPath(linkPath);
+
+    if (!(resolved instanceof TFile)) return null;
+    if (!isUploadableFile(resolved)) return null;
+    return resolved;
+  }
+
+  private extractMarkdownLinkTarget(rawTarget: string): string {
+    const trimmed = rawTarget.trim();
+    const angleMatch = trimmed.match(/^<([^>]+)>$/);
+    if (angleMatch) return angleMatch[1].trim();
+
+    const titleMatch = trimmed.match(/^(\S+)\s+(?:"[^"]*"|'[^']*')$/);
+    if (titleMatch) return titleMatch[1].trim();
+
+    return trimmed;
+  }
+
+  private getInsertedTextChange(
+    previous: string,
+    current: string,
+  ): InsertedTextChange | null {
+    if (previous === current) return null;
+
+    let start = 0;
+    const minLength = Math.min(previous.length, current.length);
+    while (
+      start < minLength &&
+      previous.charCodeAt(start) === current.charCodeAt(start)
+    ) {
+      start += 1;
+    }
+
+    let previousEnd = previous.length - 1;
+    let currentEnd = current.length - 1;
+    while (
+      previousEnd >= start &&
+      currentEnd >= start &&
+      previous.charCodeAt(previousEnd) === current.charCodeAt(currentEnd)
+    ) {
+      previousEnd -= 1;
+      currentEnd -= 1;
+    }
+
+    const insertedText = current.slice(start, currentEnd + 1);
+    if (!insertedText) return null;
+
+    return { start, insertedText };
+  }
+
+  private restoreAttachmentReferences(
+    editor: Editor,
+    placeholders: ReadonlyArray<{ id: string; originalText: string }>,
+  ): void {
+    placeholders.forEach((placeholder) => {
+      this.replacePlaceholder(editor, placeholder.id, placeholder.originalText);
+    });
+  }
+
+  private runEditorMutation(editor: Editor, mutate: () => void): void {
+    const currentCount = this.suppressedEditorChanges.get(editor) ?? 0;
+    this.suppressedEditorChanges.set(editor, currentCount + 1);
+
+    try {
+      mutate();
+    } finally {
+      if (currentCount === 0) {
+        this.suppressedEditorChanges.delete(editor);
+      } else {
+        this.suppressedEditorChanges.set(editor, currentCount);
+      }
+
+      const previous = this.editorSnapshots.get(editor);
+      this.editorSnapshots.set(editor, {
+        filePath: previous?.filePath ?? this.getActiveEditorFilePath(),
+        content: editor.getValue(),
+      });
+    }
+  }
+
+  private isEditorChangeSuppressed(editor: Editor): boolean {
+    return (this.suppressedEditorChanges.get(editor) ?? 0) > 0;
+  }
+
   private getActiveEditor(): Editor | null {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     return view?.editor ?? null;
+  }
+
+  private getActiveEditorFilePath(): string | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    return view?.file?.path ?? null;
   }
 
   // ------------------------------------------------------------------
@@ -443,11 +756,12 @@ export default class ZpicPlugin extends Plugin {
    * `zpic-upload: false`. We keep the key configurable but the constant
    * is the only one we read in this version.
    */
-  private isUploadDisabledInFrontmatter(): boolean {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const cache = view?.file
+  private isUploadDisabledInFrontmatter(file?: TFile | null): boolean {
+    const targetFile =
+      file ?? this.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
+    const cache = targetFile
       ? (this.app.metadataCache.getFileCache(
-          view.file,
+          targetFile,
         ) as CachedMetadata | null)
       : null;
     const value = cache?.frontmatter?.[FRONTMATTER_DISABLE_KEY];
